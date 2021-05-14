@@ -2,6 +2,11 @@ Different approaches to quantify years of life lost from COVID-19
 ================
 Tamás Ferenci
 
+## Manuscript:
+
+Preprint is available at
+<https://www.medrxiv.org/content/10.1101/2021.05.13.21257193v1>.
+
 ## Analysis
 
 We first do some preparation:
@@ -49,6 +54,7 @@ unique(MortData$Sex)
 
 ``` r
 MortData$Sex <- as.factor(ifelse(MortData$Sex%in%c("férfi", "Férfi"), "Male", "Female"))
+saveRDS(MortData, "MortData.rds")
 ```
 
 Basic data:
@@ -57,7 +63,7 @@ Basic data:
 nrow(MortData)
 ```
 
-    ## [1] 28970
+    ## [1] 29041
 
 ``` r
 MortData <- MortData[Age>=50]
@@ -66,13 +72,13 @@ table(MortData$Sex)
 
     ## 
     ## Female   Male 
-    ##  13667  14170
+    ##  13707  14197
 
 ``` r
 nrow(MortData)
 ```
 
-    ## [1] 27837
+    ## [1] 27904
 
 We create the first plot and save it:
 
@@ -101,14 +107,14 @@ YLL using the ordinary calculation:
 sum(MortData$ex) # YLL
 ```
 
-    ## [1] 293519
+    ## [1] 294250
 
 ``` r
 tapply(MortData$ex, MortData$Sex, sum)
 ```
 
     ## Female   Male 
-    ## 141344 152176
+    ## 141741 152509
 
 ``` r
 sum(MortData$ex) / nrow(MortData) # YLL per death
@@ -127,7 +133,7 @@ tapply(MortData$ex, MortData$Sex, mean)
 sum(MortData$ex) / (as.numeric(difftime(EndDate, StartDate, units = "days"))/365.24 * Pop50plus) # YLL per person-year
 ```
 
-    ## [1] 0.0642
+    ## [1] 0.0644
 
 We then extract the comorbidities:
 
@@ -198,19 +204,19 @@ tab1 <- merge(melt(MortData,  measure.vars = ComorbLabels$variable), ComorbLabel
 knitr::kable(tab1)
 ```
 
-| varlabel              | V2             |
-|:----------------------|:---------------|
-| Atrial fibrillation   | 3.4 (3.2-3.6)  |
-| Cancer                | 11 (10.6-11.3) |
-| COPD                  | 3.9 (3.6-4.1)  |
-| Dementia              | 7.6 (7.3-7.9)  |
-| Diabetes              | 30 (29.4-30.5) |
-| Heart failure         | 7.5 (7.2-7.8)  |
-| Hypertension          | 68 (67.4-68.5) |
-| IHD                   | 14.6 (14.2-15) |
-| Chronic liver disease | 0.8 (0.7-0.9)  |
-| Chronic renal failure | 5.4 (5.1-5.7)  |
-| Stroke                | 2.9 (2.7-3.1)  |
+| varlabel              | V2               |
+|:----------------------|:-----------------|
+| Atrial fibrillation   | 3.4 (3.2-3.6)    |
+| Cancer                | 10.9 (10.6-11.3) |
+| COPD                  | 3.8 (3.6-4.1)    |
+| Dementia              | 7.6 (7.3-7.9)    |
+| Diabetes              | 30 (29.4-30.5)   |
+| Heart failure         | 7.5 (7.2-7.8)    |
+| Hypertension          | 67.9 (67.4-68.5) |
+| IHD                   | 14.6 (14.2-15)   |
+| Chronic liver disease | 0.8 (0.7-0.9)    |
+| Chronic renal failure | 5.4 (5.1-5.7)    |
+| Stroke                | 2.9 (2.7-3.1)    |
 
 ``` r
 write.csv2(tab1, "Tab1.csv")
@@ -247,7 +253,7 @@ prop.table(table(MortData$ComorbCount))*100
 
     ## 
     ##        0        1        2        3        4        5        6        7 
-    ## 14.10712 36.36527 33.73208 12.65582  2.64756  0.42390  0.06466  0.00359
+    ## 14.13059 36.36396 33.71918 12.65052  2.64478  0.42288  0.06451  0.00358
 
 ``` r
 mean(MortData$ComorbCount>2)*100
@@ -368,7 +374,7 @@ And calculate the adjusted YLLs:
 sum(MortData$AdjustedEx) # YLL
 ```
 
-    ## [1] 256043
+    ## [1] 256701
 
 ``` r
 sum(MortData$AdjustedEx) / nrow(MortData) # YLL per death
@@ -387,7 +393,7 @@ tapply(MortData$AdjustedEx, MortData$Sex, mean)
 sum(MortData$AdjustedEx) / (as.numeric(difftime(EndDate, StartDate, units = "days"))/365.24 * Pop50plus) # YLL per person-year
 ```
 
-    ## [1] 0.056
+    ## [1] 0.0562
 
 ``` r
 100-sum(MortData$AdjustedEx)/sum(MortData$ex)*100
