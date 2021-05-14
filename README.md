@@ -2,7 +2,7 @@ Different approaches to quantify years of life lost from COVID-19
 ================
 Tamás Ferenci
 
-## Manuscript:
+## Manuscript
 
 Preprint is available at
 <https://www.medrxiv.org/content/10.1101/2021.05.13.21257193v1>.

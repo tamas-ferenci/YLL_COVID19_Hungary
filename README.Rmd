@@ -9,7 +9,7 @@ knitr::opts_chunk$set(echo = TRUE, fig.width = 12, dpi = 300)
 options(digits = 3, knitr.kable.NA = "", scipen = 999)
 ```
 
-## Manuscript:
+## Manuscript
 
 Preprint is available at [https://www.medrxiv.org/content/10.1101/2021.05.13.21257193v1](https://www.medrxiv.org/content/10.1101/2021.05.13.21257193v1).
 
