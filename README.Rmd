@@ -11,7 +11,9 @@ options(digits = 3, knitr.kable.NA = "", scipen = 999)
 
 ## Manuscript
 
-Preprint is available at [https://www.medrxiv.org/content/10.1101/2021.05.13.21257193v1](https://www.medrxiv.org/content/10.1101/2021.05.13.21257193v1).
+Citation: Tamás Ferenci. Different approaches to quantify years of life lost from COVID-19. Eur J Epidemiol. 2021 Jun 10;1-9. DOI: 10.1007/s10654-021-00774-0. PMID: 34114188.
+
+Published paper is available at [https://link.springer.com/article/10.1007/s10654-021-00774-0](https://link.springer.com/article/10.1007/s10654-021-00774-0).
 
 ## Analysis
 
@@ -58,6 +60,12 @@ MortData$Sex <- as.factor(ifelse(MortData$Sex%in%c("férfi", "Férfi"), "Male", 
 saveRDS(MortData, "MortData.rds")
 ```
 
+However, for reproducibility, we now use the original data:
+
+```{r}
+MortData <- readRDS("MortData_20210512.rds")
+```
+
 Basic data:
 
 ```{r}
@@ -82,7 +90,6 @@ We can now merge the life table and the mortality data:
 MortData <- merge(MortData, LifeTable)
 MortData$Sex <- as.factor(MortData$Sex)
 ```
-
 
 YLL using the ordinary calculation:
 
