@@ -29,8 +29,6 @@ name_cols <- c("atr_fib", "cancer", "copd", "demen", "diab", "h_fail", "hypert",
 name_cols_age <- c("atr_fib:age", "cancer:age", "copd:age", "demen:age", "diab:age", "h_fail:age", 
                    "hypert:age", "ihd:age", "renal:age", "liver:age", "stroke:age")
 
-StartDate <- as.Date("2020-03-04")
-EndDate <- Sys.Date()
 Pop50plus <- 3828819
 ```
 
@@ -46,25 +44,39 @@ if(!file.exists("LifeTableHUN.rds")) {
 } else LifeTable <- readRDS("LifeTableHUN.rds")
 ```
 
+Next, we download the epidemiologic data:
+
+```{r}
+if(!file.exists("EpiData.rds")) {
+  EpiData <- fread("https://covid.ourworldindata.org/data/owid-covid-data.csv")
+  EpiData$date <- EpiData$date-1
+} else EpiData <- readRDS("EpiData.rds")
+```
+
 We then scrape the mortality data:
 
 ```{r}
-pg <- xml2::read_html("https://koronavirus.gov.hu/elhunytak")
-lastpg <- strsplit(rvest::html_attr(rvest::html_node(pg, xpath = "//li[@class='pager-last']/a"), "href"),
-                   "=")[[1]][2]
-MortData <- rbindlist(lapply(0:lastpg, function(i)
-  rvest::html_table(xml2::read_html(paste0("https://koronavirus.gov.hu/elhunytak?page=", i)))[[1]]))
-names(MortData) <- c("ID", "Sex", "Age", "Comorbidities")
-unique(MortData$Sex)
-MortData$Sex <- as.factor(ifelse(MortData$Sex%in%c("férfi", "Férfi"), "Male", "Female"))
-saveRDS(MortData, "MortData.rds")
+if(!file.exists("MortData.rds")) {
+  pg <- xml2::read_html("https://koronavirus.gov.hu/elhunytak")
+  lastpg <- strsplit(rvest::html_attr(rvest::html_node(pg, xpath = "//li[@class='pager-last']/a"),
+                                      "href"), "=")[[1]][2]
+  MortData <- rbindlist(lapply(0:lastpg, function(i)
+    rvest::html_table(xml2::read_html(paste0("https://koronavirus.gov.hu/elhunytak?page=", i)))[[1]]))
+  names(MortData) <- c("ID", "Sex", "Age", "Comorbidities")
+  unique(MortData$Sex)
+  MortData$Sex <- as.factor(ifelse(MortData$Sex%in%c("férfi", "Férfi"), "Male", "Female"))
+  NewDeathsHUN <- EpiData[iso_code=="HUN", .(date, new_deaths)][!is.na(new_deaths)]
+  DeathDates <- rep(NewDeathsHUN$date, NewDeathsHUN$new_deaths)
+  MortData <- MortData[order(ID)][1:length(DeathDates)]
+  MortData$Date <- DeathDates
+  saveRDS(MortData, "MortData.rds")
+} else MortData <- readRDS("MortData.rds")
+
+StartDate <- min(MortData$Date)
+EndDate <- max(MortData$Date)
 ```
 
-However, for reproducibility, we now use the original data:
-
-```{r}
-MortData <- readRDS("MortData_20210512.rds")
-```
+For reproducibility of the EJE paper, we can use the original data (`MortData <- readRDS("MortData_20210512.rds")`).
 
 Basic data:
 
@@ -99,8 +111,9 @@ tapply(MortData$ex, MortData$Sex, sum)
 sum(MortData$ex) / nrow(MortData) # YLL per death
 tapply(MortData$ex, MortData$Sex, mean)
 sum(MortData$ex) / (as.numeric(difftime(EndDate, StartDate, units = "days"))/365.24 * Pop50plus) # YLL per person-year
-
 ```
+
+### Original EJE paper
 
 We then extract the comorbidities:
 
@@ -147,12 +160,14 @@ We then create the second figure and save it:
 ```{r}
 predgrid <- expand.grid(Age = seq(50, 100, 0.1), Sex = c("Male", "Female"))
 ComorbPrevs <- rbindlist(setNames(lapply(ComorbLabels$variable, function(v) {
-  fit <- mgcv::gam(as.formula(paste0(v, "~ s(Age, by = Sex) + Sex")), data = MortData, family = binomial)
+  fit <- mgcv::gam(as.formula(paste0(v, "~ s(Age, by = Sex) + Sex")), data = MortData,
+                   family = binomial)
   cbind(predgrid, with(predict(fit, predgrid, se.fit = TRUE),
                        data.frame(est = plogis(fit), lwr = plogis(fit - 1.96*se.fit),
                                   upr = plogis(fit + 1.96*se.fit))))
 }), ComorbLabels$varlabel), idcol = TRUE)
-ggplot(ComorbPrevs, aes(x = Age, y = est*100, color = Sex, fill = Sex, ymin = lwr*100, ymax = upr*100)) +
+ggplot(ComorbPrevs,
+       aes(x = Age, y = est*100, color = Sex, fill = Sex, ymin = lwr*100, ymax = upr*100)) +
   geom_line() + geom_ribbon(alpha = 0.2, linetype = 0) + facet_wrap(~.id) +
   labs(x = "Age [year]", y = "Prevalence [%]") +
   theme(legend.position = "bottom", legend.title = element_blank())
@@ -167,12 +182,14 @@ prop.table(table(MortData$ComorbCount))*100
 mean(MortData$ComorbCount>2)*100
 
 ggplot(reshape2::melt(table(MortData$ComorbCount, MortData$Age, MortData$Sex)),
-       aes(x = Var2, fill = forcats::fct_rev(as.factor(Var1)), y = value)) + geom_area(position = "fill", alpha = 0.7) +
+       aes(x = Var2, fill = forcats::fct_rev(as.factor(Var1)), y = value)) +
+  geom_area(position = "fill", alpha = 0.7) +
   facet_grid(cols = vars(Var3)) + scale_x_continuous(expand = c(0, 0), limits = c(50, 90)) +
   scale_y_continuous(labels = scales::percent_format(suffix = ""), expand = c(0, 0)) + 
   labs(x = "Age [year]", y = "Proportion [%]", fill = "Number of comorbidities") +
   guides(fill = guide_legend(reverse = TRUE)) +
-  theme(legend.position = "bottom", legend.title = element_blank(), panel.spacing = unit(1, "lines"))
+  theme(legend.position = "bottom", legend.title = element_blank(),
+        panel.spacing = unit(1, "lines"))
 ggsave("Fig3.eps", width = 174, height = 174, units = "mm", device = cairo_ps)
 ```
 
@@ -193,7 +210,8 @@ SurvGomp <- function(t, start, ...) {
 times_vect <- seq(50, 150, 0.1)
 
 temp <- 1-SurvGomp(t = times_vect, start = MortData$Age[2], shape = male_coef["shape"],
-                   rate = exp(male_coef["rate"] + as.matrix(MortData[2, ..name_cols])%*%male_coef[name_cols] +
+                   rate = exp(male_coef["rate"] +
+                                as.matrix(MortData[2, ..name_cols])%*%male_coef[name_cols] +
                                 (MortData$Age[2]*as.matrix(MortData[2, ..name_cols]))%*%male_coef[name_cols_age]),
                    lower_tail = TRUE, give_log = FALSE)
 
@@ -222,7 +240,8 @@ offsetgrid$leratio <- (offsetgrid$Age + offsetgrid$ex)/(offsetgrid$Age + offsetg
 MortData$AdjustedEx <- sapply(1:nrow(MortData), function(i) {
   usedcoefs <- if(MortData$Sex[i]=="Male") male_coef else female_coef
   temp <- 1-SurvGomp(t = times_vect, start = MortData$Age[i], shape = usedcoefs["shape"],
-                     rate = exp(usedcoefs["rate"] + as.matrix(MortData[i, ..name_cols])%*%usedcoefs[name_cols] +
+                     rate = exp(usedcoefs["rate"] +
+                                  as.matrix(MortData[i, ..name_cols])%*%usedcoefs[name_cols] +
                                   (MortData$Age[i]*as.matrix(MortData[i, ..name_cols]))%*%usedcoefs[name_cols_age]),
                      lower_tail = TRUE, give_log = FALSE)
   # sum((temp - c(0, temp[-length(temp)]))*times_vect)*offsetgrid[Sex==MortData$Sex[i]&Age==MortData$Age[i]]$leratio-MortData$Age[i]
@@ -234,7 +253,8 @@ MortData$AdjustedEx <- sapply(1:nrow(MortData), function(i) {
 We can now create the fourth figure:
 
 ```{r}
-ggplot(MortData, aes(x = ex, y = AdjustedEx, color = Age)) + geom_jitter(size = 0.1, width = 1, height = 1) +
+ggplot(MortData, aes(x = ex, y = AdjustedEx, color = Age)) +
+  geom_jitter(size = 0.1, width = 1, height = 1) +
   facet_grid(cols = vars(Sex)) + geom_abline(intercept = 0, slope = 1, color = "red") +
   labs(x = "Expected number of years of life remaining, Hungarian life table [year]",
        y = "Expected number of years of life remaining, Hanlon et al survival model [year]")
@@ -257,4 +277,157 @@ Life-table norms:
 sum(LifeTable[Sex=="Female", .(dx*ex)]$V1)/sum(LifeTable[Sex=="Female"]$dx)
 sum(LifeTable[Sex=="Male", .(dx*ex)]$V1)/sum(LifeTable[Sex=="Male"]$dx)
 sum(LifeTable[, .(dx*ex)]$V1)/sum(LifeTable$dx)
+```
+
+### Reply letter
+
+We first download the GBD Reference Life Table and transform it to the forms that we will later need:
+
+```{r}
+GBDRef5 <- fread("IHME_GBD_2019_TMRLT_Y2021M01D05.CSV", check.names = TRUE)
+GBDRef5100 <- rbind(GBDRef5, data.table(Age = 100,
+                                        Life.Expectancy = GBDRef5[Age==95]$Life.Expectancy))
+GBDRef <- data.table(Age = 0:95, ex = approx(GBDRef5$Age, GBDRef5$Life.Expectancy, 0:95)$y)
+GBDRef <- rbind(GBDRef, data.table(Age = 96:105, ex = GBDRef[Age==95]$ex))
+
+MortData <- merge(MortData, GBDRef[, .(Age, GBDex = ex)], by = "Age")
+```
+
+We can now calculate the aspirational metrics:
+
+```{r}
+sum(MortData$GBDex)
+sum(MortData$GBDex)/nrow(MortData)
+
+sapply(c(70, 75, 80, 85), function(targ) sum(pmax(targ-MortData$Age, 0)))
+sapply(c(70, 75, 80, 85), function(targ) sum(pmax(targ-MortData$Age, 0)))/nrow(MortData)
+```
+
+Investigating how the result of the fixed target age approach depends on the target age set:
+
+```{r}
+yllaspfixed <- data.table(TargetAge = 50:100,
+                          YLL = sapply(50:100, function(targ) sum(pmax(targ-MortData$Age, 0))))
+ggplot(yllaspfixed, aes(x = TargetAge, y = YLL)) + geom_line()
+summary(lm(YLL/1e5 ~ poly(TargetAge, 2, raw = TRUE), data = yllaspfixed))
+```
+
+For the international analysis, we first download and prepare the COVerAGE-DB dataset (at 5 year age resolution):
+
+```{r, warning = FALSE}
+osfr::osf_download(osfr::osf_retrieve_file("7tnfh"), conflicts = "overwrite")
+
+CADB5 <- as.data.table(readr::read_csv("Output_5.zip", skip = 3, col_types = "ccccciiddd"))
+CADB5$Date <- as.Date(CADB5$Date, format = "%d.%m.%Y")
+
+CADB5 <- merge(CADB5, CADB5[,.(maxdate = max(Date[!is.na(Deaths)])),
+                            .(Country, Region)][maxdate>=as.Date("2021-12-01")])
+CADB5 <- CADB5[Date==maxdate][Sex=="b"]
+
+CADB5 <- merge(CADB5, GBDRef5100, by = "Age")
+```
+
+We can alread calculate the aspirational YLLs:
+
+```{r}
+CADB5[, .(YLLperDeath = sum(Deaths*Life.Expectancy)/sum(Deaths)),
+      .(Country, Region)][!is.na(YLLperDeath)][order(YLLperDeath)]
+CADB5[, .(YLLperDeath = sum(pmax(70-Age, 0)*Deaths)/sum(Deaths)),
+      .(Country, Region)][!is.na(YLLperDeath)][order(YLLperDeath)]
+```
+
+But to calculate the standard life table YLL (using each country's own life table), we need to download the national life tables and merge it with our dataset:
+
+```{r}
+unique(CADB5[Region=="All"]$Country)
+
+countries <- data.table(
+  Country = c("Australia", "Austria", "Belgium", "Bulgaria", "Chile", "Croatia",
+              "Denmark", "Estonia", "Finland", "France", "Germany", "Hungary",
+              "Italy", "Japan", "Latvia" ,"Netherlands", "New Zealand",
+              "Northern Ireland", "Norway", "Scotland", "Slovakia",
+              "Spain", "Sweden", "Switzerland", "USA"),
+  Code = c("AUS", "AUT", "BEL", "BGR", "CHL", "HRV", "DNK", "EST", "FIN", "FRATNP",
+           "DEUTNP", "HUN", "ITA", "JPN", "LVA", "NLD", "NZL_NP", "GBR_NIR", "NOR",
+           "GBR_SCO", "SVK", "ESP", "SWE", "CHE", "USA"))
+
+if(!file.exists("LifeTableWord.rds")) {
+  LifeTableWorld <- rbindlist(lapply(countries$Code, function(cod)
+    data.table(Code = cod, HMDHFDplus::readHMDweb(cod, "bltper_5x1"))))
+  saveRDS(LifeTableWorld, "LifeTableWord.rds")
+} else LifeTableWorld <- readRDS("LifeTableWord.rds")
+
+LifeTableWorld <- merge(LifeTableWorld, LifeTableWorld[,.(maxyear = max(Year)),.(Code)][maxyear>=2017])
+LifeTableWorld <- LifeTableWorld[Year==maxyear]
+LifeTableWorld <- merge(LifeTableWorld, countries, by = "Code")
+```
+
+We can now calculate the YLL with every approach:
+
+```{r}
+yllworld <-
+  rbind(merge(CADB5[Region=="All"], LifeTableWorld,
+              by = c("Country", "Age"))[, .(Type = "Actual LT",
+                                            YLLperDeath = sum(Deaths*ex)/sum(Deaths)), .(Country)],
+        CADB5[Region=="All", .(Type = "GBD",YLLperDeath = sum(Deaths*Life.Expectancy)/sum(Deaths)),
+              .(Country)],
+        rbindlist(lapply(c(70, 75, 80, 85), function(targ)
+          CADB5[Region=="All", .(Type = paste0("Fixed, target: ", targ),
+                                 YLLperDeath = sum(pmax(targ-Age, 0)*Deaths)/sum(Deaths)),
+                .(Country)])))
+```
+
+And we can plot the results:
+
+```{r}
+ggplot(melt(dcast(yllworld, Country ~ Type, value.var = "YLLperDeath")[!is.na(`Actual LT`)],
+            id.vars = c("Country", "GBD")),
+       aes(x = GBD, y = value, group = variable, color = variable)) + geom_point() +
+  labs(color = "Type", y = "Years of life lost with Type method",
+       x = "Years of life lost with GBD Reference Life Table")
+ggsave("ReplyFig1.eps", width = 174, height = 174, units = "mm", device = cairo_ps)
+```
+
+Just out of curiosity, we can check how the YLL with the fixed target age approach depends on the target age, internationally:
+
+```{r}
+ggplot(CADB5[Region=="All", .(TargetAge = 0:100,
+                              YLLperDeath = sapply(0:100, function(targ)
+                                sum(pmax(targ-Age, 0)*Deaths)/sum(Deaths))),
+             .(Country)], aes(x = TargetAge, y = YLLperDeath, group = Country, color = Country)) +
+  geom_line()
+
+fitdata <- CADB5[Region=="All", .(TargetAge = 0:100,
+                                  YLLperDeath = sapply(0:100, function(targ)
+                                    sum(pmax(targ-Age, 0)*Deaths)/sum(Deaths))),
+                 .(Country)]
+fitres <- lapply(unique(fitdata$Country), function(country)
+  lm(YLLperDeath/1e5 ~ poly(TargetAge, 2, raw = TRUE), data = fitdata[Country==country]))
+
+fitres <- rbindlist(lapply(1:length(fitres), 
+                           function(i) data.table(unique(fitdata$Country)[i],
+                                                  c("beta0", "beta1", "beta2"),
+                                                  coef(fitres[[i]]), confint(fitres[[i]]))))
+colnames(fitres) <- c("Country", "Coefficient", "Estimate", "CIlwr", "CIupr")
+
+ggplot(fitres, aes(x = Estimate, xmin = CIlwr, xmax = CIupr, y = Country)) + geom_point() +
+  geom_errorbar() + facet_grid(cols = vars(Coefficient), scales = "free") +
+  labs(x = "", y = "")
+```
+
+Finally, we create the other plot:
+
+```{r}
+ggplot(melt(MortData[, .(`National life table` = sum(ex),
+                         `Comorbidity adjusted` = sum(AdjustedEx),
+                         `Aspirational (GBD)` = sum(GBDex)), .(Date)][order(Date)],
+            id.vars = "Date"),
+       aes(x = Date, y = value, group = variable, color = variable, fill = variable)) +
+  geom_line(alpha = 0.1) + geom_smooth(span = 0.2, alpha = 0.2) +
+  geom_line(data = EpiData[location=="Hungary"],
+            aes(x = date, y = new_deaths_smoothed*10), inherit.aes = FALSE) +
+  scale_y_continuous("Years of life lost per day",
+                     sec.axis = sec_axis(~ ./10, name = "Deaths per day")) +
+  labs(color = "", fill = "") + theme(legend.position = "bottom")
+ggsave("ReplyFig2.eps", width = 174, height = 174, units = "mm", device = cairo_ps)
 ```
